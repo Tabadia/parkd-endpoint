@@ -19,7 +19,7 @@ app.post('/api/detect_and_ocr', upload.single('image'), async (req, res) => {
     form.append('img_np', req.file.buffer, req.file.originalname);
 
     const response = await axios.post(
-      'https://thalenn-lpr-permit-detection.hf.space/run/predict',
+      'https://thalenn-lpr-permit-detection.hf.space/gradio_api/call/detect_and_ocr',
       form,
       {
         headers: {
