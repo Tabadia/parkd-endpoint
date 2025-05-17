@@ -15,6 +15,7 @@ app.post('/api/detect_and_ocr', upload.single('image'), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'No image uploaded' });
     }
+    console.log(req.file.mimetype, req.file.originalname);
     const form = new FormData();
     form.append('data', req.file.buffer, req.file.originalname);
 
