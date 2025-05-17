@@ -11,5 +11,14 @@
       "src": "/(.*)",
       "dest": "/index.js"
     }
-  ]
+  ],
+  "build": {
+    "env": {
+      "NODE_ENV": "production"
+    }
+  },
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "type": "nodejs"
 }
