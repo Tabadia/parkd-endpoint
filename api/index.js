@@ -16,7 +16,7 @@ app.post('/api/detect_and_ocr', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'No image uploaded' });
     }
     const form = new FormData();
-    form.append('img_np', req.file.buffer, req.file.originalname);
+    form.append('data', req.file.buffer, req.file.originalname);
 
     const response = await axios.post(
       'https://thalenn-lpr-permit-detection.hf.space/gradio_api/call/detect_and_ocr',
