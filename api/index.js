@@ -18,7 +18,8 @@ app.get('/', (req, res) => {
 });
 
 // Process image endpoint
-app.post('/api/process-permit', async (req, res) => {
+// On Vercel, API routes are mounted relative to /api, so use '/process-permit' instead of '/api/process-permit'
+app.post('/process-permit', async (req, res) => {
   try {
     if (!req.files || !req.files.image) {
       return res.status(400).json({ error: 'No image file provided' });
@@ -49,14 +50,5 @@ app.post('/api/process-permit', async (req, res) => {
   }
 });
 
-// For local development
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-  });
-}
-
-// Export the serverless handler
-module.exports = app;
-module.exports.handler = serverless(app);
+// Export the serverless handler for Vercel
+module.exports = serverless(app);
