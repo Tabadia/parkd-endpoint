@@ -4,10 +4,8 @@ const axios = require('axios');
 const FormData = require('form-data');
 const multer = require('multer');
 
-// Set up multer for file uploads
 const upload = multer();
 
-// Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
@@ -17,11 +15,9 @@ app.post('/api/detect_and_ocr', upload.single('image'), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'No image uploaded' });
     }
-    // Prepare form-data
     const form = new FormData();
     form.append('img_np', req.file.buffer, req.file.originalname);
 
-    // Make the request to the Hugging Face Space (adjust endpoint if needed)
     const response = await axios.post(
       'https://thalenn-lpr-permit-detection.hf.space/run/predict',
       form,
@@ -39,7 +35,6 @@ app.post('/api/detect_and_ocr', upload.single('image'), async (req, res) => {
   }
 });
 
-// For local development
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
@@ -47,5 +42,4 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-// Export the Express API
 module.exports = app; 
