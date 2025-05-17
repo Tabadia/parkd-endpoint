@@ -1,6 +1,12 @@
-const express = require('express');
+import express from 'express';
+import { Client } from "@gradio/client";
 const app = express();
-const axios = require('axios');
+
+// Initialize Gradio client (adjust URL if your Gradio app runs elsewhere)
+let gradioClient;
+(async () => {
+  gradioClient = await Client.connect("thalenn/lpr-permit-detection");
+})();
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -9,64 +15,35 @@ app.get('/api/health', (req, res) => {
 app.use(express.json({ limit: '10mb' }));
 
 app.post('/api/detect_and_ocr', async (req, res) => {
-    try {
-      const payload = req.body;
-      if (!payload?.data?.[0]) {
-        return res.status(400).json({ error: 'No image uploaded' });
-      }
-  
-      // 1) Send your base64 JSON to HF-space → get event_id
-      const postRes = await axios.post(
-        'https://thalenn-lpr-permit-detection.hf.space/gradio_api/call/detect_and_ocr',
-        payload,
-        { headers: { 'Content-Type': 'application/json' } }
-      );
-      const eventId = postRes.data.event_id;
-      if (!eventId) {
-        throw new Error('No event_id returned from Gradio');
-      }
-  
-      // 2) Fetch the SSE stream for that event
-      const streamRes = await axios.get(
-        `https://thalenn-lpr-permit-detection.hf.space/gradio_api/call/detect_and_ocr/${eventId}`,
-        { responseType: 'stream' }
-      );
-  
-      let buffer = '';
-      streamRes.data.on('data', chunk => {
-        buffer += chunk.toString();
-      });
-  
-      streamRes.data.on('end', () => {
-        // Extract all lines that start with "data: "
-        const dataLines = buffer
-          .split('\n')
-          .filter(line => line.startsWith('data: '))
-          .map(line => line.replace(/^data: /, ''));
-  
-        if (dataLines.length === 0) {
-          return res.status(500).json({ error: 'No data in SSE stream' });
-        }
-  
-        // The last data line is your final payload
-        const finalPayload = JSON.parse(dataLines.pop());
-        // finalPayload.data is an array: [ plateText, base64Image|null ]
-        return res.json({ data: finalPayload.data });
-      });
-  
-      streamRes.data.on('error', err => {
-        console.error('SSE stream error:', err);
-        return res.status(500).json({ error: 'Failed to fetch results' });
-      });
-  
-    } catch (err) {
-      console.error('OCR proxy error:', err.response?.data || err.message);
-      res.status(500).json({
-        error:   'Failed to process image',
-        details: err.response?.data || err.message
-      });
+  try {
+    // Accept image as base64 string in req.body.image
+    const base64Image = req.body.image;
+    if (!base64Image) {
+      return res.status(400).json({ error: 'No image uploaded' });
     }
-  });
+
+    // Convert base64 to Buffer
+    const imageBuffer = Buffer.from(base64Image, 'base64');
+
+    // debug logging
+    console.log('Forwarding image buffer size:', imageBuffer.length, 'bytes');
+
+    if (!gradioClient) {
+      return res.status(503).json({ error: 'Gradio client not initialized yet' });
+    }
+
+    // Call Gradio predict endpoint with the correct parameter object
+    // This assumes your Gradio function is exposed at "/detect_and_ocr" and expects { img_np: <image> }
+    const result = await gradioClient.predict("/detect_and_ocr", { img_np: imageBuffer });
+    res.json(result.data);
+  } catch (err) {
+    console.error('OCR proxy error:', err.message || err);
+    res.status(500).json({
+      error:   'Failed to process image',
+      details: err.message || err
+    });
+  }
+});
 
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 3000;
@@ -75,4 +52,4 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-module.exports = app; 
+export default app;
