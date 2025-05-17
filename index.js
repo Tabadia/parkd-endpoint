@@ -3,9 +3,9 @@ const express = require('express');
 const fileUpload = require('express-fileupload');
 const cors = require('cors');
 const { Client } = require('@gradio/client');
+const serverless = require('serverless-http');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
@@ -49,9 +49,14 @@ app.post('/api/process-permit', async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
+}
 
+// Export the serverless handler
 module.exports = app;
+module.exports.handler = serverless(app);
