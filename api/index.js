@@ -1,55 +1,69 @@
 import express from 'express';
 import { Client } from "@gradio/client";
+
 const app = express();
-
-// Initialize Gradio client (adjust URL if your Gradio app runs elsewhere)
+const SPACE_URL = "https://thalenn-lpr-permit-detection.hf.space";
 let gradioClient;
-(async () => {
-  gradioClient = await Client.connect("thalenn/lpr-permit-detection");
-})();
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
+/**
+ * Try to connect over WebSocket, falling back to HTTP if all retries fail.
+ */
+async function initGradioClient(url, retries = 5) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      console.log(`Attempting WS connect to Gradio Space (#${i+1})…`);
+      return await Client.connect(url);
+    } catch (err) {
+      console.warn(`WS connect failed (attempt ${i+1}):`, err.message);
+      await new Promise(r => setTimeout(r, 1000 * 2**i));
+    }
+  }
+  console.warn("All WS connect attempts failed—falling back to HTTP client");
+  // HTTP client never sleeps on connect, each .predict() is a POST
+  return new Client(url);
+}
 
-app.use(express.json({ limit: '10mb' }));
+async function bootstrap() {
+  gradioClient = await initGradioClient(SPACE_URL);
+  console.log(`✅ Gradio client ready (${gradioClient instanceof Client ? 'HTTP' : 'WS/HTTP'})`);
 
-app.post('/api/detect_and_ocr', async (req, res) => {
-  try {
-    // Accept image as base64 string in req.body.image
-    const base64Image = req.body.image;
+  app.use(express.json({ limit: '10mb' }));
+
+  app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+
+  app.post('/api/detect_and_ocr', async (req, res) => {
+    const { image: base64Image } = req.body;
     if (!base64Image) {
       return res.status(400).json({ error: 'No image uploaded' });
     }
 
-    // Convert base64 to Buffer
-    const imageBuffer = Buffer.from(base64Image, 'base64');
-
-    // debug logging
-    console.log('Forwarding image buffer size:', imageBuffer.length, 'bytes');
-
-    if (!gradioClient) {
-      return res.status(503).json({ error: 'Gradio client not initialized yet' });
+    const buf = Buffer.from(base64Image, 'base64');
+    try {
+      // If this was the HTTP client fallback, this will POST; otherwise WS.
+      const result = await gradioClient.predict("/detect_and_ocr", { img_np: buf });
+      return res.json(result.data);
+    } catch (err) {
+      console.error('OCR proxy error:', err);
+      // If we were still on WS and it died mid-stream, switch to HTTP on the fly:
+      if (gradioClient instanceof Client && gradioClient._transport === 'websocket') {
+        console.warn("WebSocket failed during predict—switching to HTTP client and retrying once");
+        gradioClient = new Client(SPACE_URL);
+        try {
+          const retry = await gradioClient.predict("/detect_and_ocr", { img_np: buf });
+          return res.json(retry.data);
+        } catch (retryErr) {
+          console.error('Retry via HTTP also failed:', retryErr);
+        }
+      }
+      return res.status(500).json({ error: 'Failed to process image', details: err.message });
     }
-
-    // Call Gradio predict endpoint with the correct parameter object
-    // This assumes your Gradio function is exposed at "/detect_and_ocr" and expects { img_np: <image> }
-    const result = await gradioClient.predict("/detect_and_ocr", { img_np: imageBuffer });
-    res.json(result.data);
-  } catch (err) {
-    console.error('OCR proxy error:', err.message || err);
-    res.status(500).json({
-      error:   'Failed to process image',
-      details: err.message || err
-    });
-  }
-});
-
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
   });
+
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 }
 
-export default app;
+bootstrap().catch(err => {
+  console.error("Fatal error initializing Gradio client:", err);
+  process.exit(1);
+});
